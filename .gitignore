@@ -1,5 +1,7 @@
 .gitignore~
-sensor.c~
+*.c~
 make~
 a.out
 sensorlog
+*.csv
+*.csv~
