@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -14,7 +15,11 @@
 #define ADS_ADDR3 0x50
 #define ADS_ADDR4 0x51
 
-#define DEBUG 1
+#define	filenamelength 30
+#define filestringlength 200
+#define bufferlength 10
+
+#define DEBUG 0
 
 //######################################################
 int convert(int fd,uint8_t buf[])
@@ -52,21 +57,29 @@ int convert(int fd,uint8_t buf[])
 //######################################################
 int main()
   {
-  time_t akttime;
+  time_t akttime;	   // Zeitstempel
   time_t baktime;
-  struct tm *timeset;
-  int update;
+  struct tm *timeset;	   // Zeitstruktur zerlegt in Elemente
+  int update;		   // Update der Daten im Minutentakt
   
   int fd1;                 // Device-Handle i2c
-  int fdlog;		   // File for Logging
-  uint8_t buf1[10];        // I/O buffer 1a
-  uint8_t buf2[10];        // I/O buffer 2a
-  uint8_t buf3[10];        // I/O buffer 3a
-  uint8_t buf4[10];        // I/O buffer 4a
-  uint8_t buf5[10];        // I/O buffer 1b
-  uint8_t buf6[10];        // I/O buffer 2b
-  uint8_t buf7[10];        // I/O buffer 3b
-  uint8_t buf8[10];        // I/O buffer 4b
+  FILE *fdlog;		   // File for Logging
+  char filename[filenamelength]; // Filename
+  int logready;		   // Status Logfile
+  int n;		   // temp. Laufvariable
+  char filehead[filestringlength];	   // Kopf der CSV-Datei
+  char fileinput[filestringlength];	   // Datenstring für Log  
+  long count;		   // Anzahl Daten
+  int PRG_OK;		   // Programmmlauf OK
+  
+  uint8_t buf1[bufferlength];        // I/O buffer 1a
+  uint8_t buf2[bufferlength];        // I/O buffer 2a
+  uint8_t buf3[bufferlength];        // I/O buffer 3a
+  uint8_t buf4[bufferlength];        // I/O buffer 4a
+  uint8_t buf5[bufferlength];        // I/O buffer 1b
+  uint8_t buf6[bufferlength];        // I/O buffer 2b
+  uint8_t buf7[bufferlength];        // I/O buffer 3b
+  uint8_t buf8[bufferlength];        // I/O buffer 4b
   int16_t val1;            // Result (int) channel 1a
   int16_t val2;            // Result (int) channel 2a
   int16_t val3;            // Result (int) channel 3a
@@ -81,36 +94,83 @@ int main()
   {
     printf("Error: Couldn't open device! %d\n", fd1);
     close(fd1);
-    close(fdlog);
     exit(-1);
   }
-  fdlog = -1;
+  logready = 0;
+  update = 0;
+  count = 0;
+  PRG_OK = 1;
+  for(n=0;n<filenamelength;n++)
+    filename[n]=0x0;
+  for(n=0;n<filestringlength;n++)
+    fileinput[n]=0x0;
+  for(n=0;n<filestringlength;n++)
+    filehead[n]=0x0;
 
-  for (;;) // loop forever
+  sprintf(filehead,"Zeit;Anzahl;Ch.1;Ch.2;Ch.3;Ch.4;Ch.5;Ch.6;Ch.7;Ch.8;\n\0");
+
+  printf("Hauptprogramm\n");  
+
+  while(PRG_OK) // loop forever
   {
-    if (baktime != akttime)
-    {
-      baktime = akttime;
-      update = 1;
-    }
-    else
-      update = 0;
+      if (baktime != akttime)
+      {
+        baktime = akttime;
+        update = 1;
+      }
+      else
+        update = 0;
+        
+      time(&akttime);
+      timeset = localtime(&akttime);  
+      if(DEBUG)
+        printf("Debug: Jahr: %04d ,Monat: %02d ,Tag: %02d ,Stunde: %02d ,Minute: %02d ,Sekunde: %02d ,Tage: %03d \n",timeset->tm_year+1900,timeset->tm_mon+1,timeset->tm_mday,timeset->tm_hour,timeset->tm_min,timeset->tm_sec,timeset->tm_yday);
       
-    time(&akttime);
-    timeset = localtime(&akttime);  
-    if(DEBUG)
-      printf("-- Jahr: %d ,Monat: %d ,Tag: %d ,Stunde: %d ,Minute: %d ,Sekunde: %d ,Tage: %d --\n",timeset->tm_year+1900,timeset->tm_mon+1,timeset->tm_mday,timeset->tm_hour,timeset->tm_min,timeset->tm_sec,timeset->tm_yday);
+      sprintf(filename,"Log_%04d%02d%02d.csv\0",timeset->tm_year+1900,timeset->tm_mon+1,timeset->tm_mday);
+      if(DEBUG)
+        printf("Debug: %s\n",filename);
+
+      // Wenn kein Zeiger auf jeden fall versuchen
+      if(! logready)
+      {
+        if((fdlog = fopen(filename,"a")) >= 0)
+        {
+          printf("Datei %s geöffnet(1)\n",filename);
+          fprintf(fdlog,"%s",filehead);
+          fflush(fdlog);
+          logready = 1;
+        }
+        else
+        {
+          printf("Datei %s kann nicht geöffnet werden(1)\n",filename);
+          logready = 0;
+        }
+      }
       
+      // Tageswechsel
+      if((logready)&(timeset->tm_hour == 0)&(timeset->tm_min == 0)&(timeset->tm_sec == 0))
+      {
+        fclose(fdlog);
+        if((fdlog = fopen(filename,"w")) >= 0)
+        {
+          printf("Datei %s geöffnet(2)\n",filename);
+          fprintf(fdlog,"%s",filehead);
+          fflush(fdlog);
+          logready = 1;
+        }
+        else
+        {
+          printf("Datei %s kann nicht geöffnet werden(2)\n",filename);
+          logready = 0;
+        }
+      }
     
-    
-    // connect to first ads1115 as i2c slave
-    if (ioctl(fd1, I2C_SLAVE, ADS_ADDR1) < 0)
-    {
-      printf("Error: Couldn't find device on address!\n");
-      close(fd1);
-      close(fdlog);
-      exit(-1);;
-    }
+      // connect to first ads1115 as i2c slave
+      if (ioctl(fd1, I2C_SLAVE, ADS_ADDR1) < 0)
+      {
+        printf("Error: Couldn't find device on address!\n");
+        PRG_OK = 0;
+      }
     
       // set config register (reg. 1) and start conversion
       // AIN0 and GND, 4.096 V, 128 samples/s
@@ -119,52 +179,34 @@ int main()
       buf1[2] = 0x85;
       
       if(convert(fd1,buf1) < 0)
-      {
-        close(fd1);
-        close(fdlog);
-        exit(-1);
-      }
+        PRG_OK = 0;
       
       buf2[0] = 1;
       buf2[1] = 0xd1;
       buf2[2] = 0x85;
       
       if(convert(fd1,buf2) < 0)
-      {
-        close(fd1);
-        close(fdlog);
-        exit(-1);
-      }
+        PRG_OK = 0;
       
       buf3[0] = 1;
       buf3[1] = 0xe1;
       buf3[2] = 0x85;
       
       if(convert(fd1,buf3) < 0)
-      {
-        close(fd1);
-        close(fdlog);
-        exit(-1);
-      }
+        PRG_OK = 0;
       
       buf4[0] = 1;
       buf4[1] = 0xf1;
       buf4[2] = 0x85;
       
       if(convert(fd1,buf4) < 0)
-      {
-        close(fd1);
-        close(fdlog);
-        exit(-1);
-      }
+        PRG_OK = 0;
       
       // connect to second ads1115 as i2c slave 
       if (ioctl(fd1, I2C_SLAVE, ADS_ADDR2) < 0)
       {
         printf("Error: Couldn't find device on address!\n");
-        close(fd1);
-        close(fdlog);
-        exit(-1);
+        PRG_OK = 0;
       }
         
       // set config register (reg. 1) and start conversion
@@ -174,44 +216,28 @@ int main()
       buf5[2] = 0x85;
       
       if(convert(fd1,buf5) < 0)
-      {
-        close(fd1);
-        close(fdlog);
-        exit(-1);
-      }
+        PRG_OK = 0;
       
       buf6[0] = 1;
       buf6[1] = 0xd1;
       buf6[2] = 0x85;
       
       if(convert(fd1,buf6) < 0)
-      {
-        close(fd1);
-        close(fdlog);
-        exit(-1);
-      }
+        PRG_OK = 0;
 
       buf7[0] = 1;
       buf7[1] = 0xe1;
       buf7[2] = 0x85;
 
       if(convert(fd1,buf7) < 0)
-      {
-        close(fd1);
-        close(fdlog);
-        exit(-1);
-      }
+        PRG_OK = 0;
 
       buf8[0] = 1;
       buf8[1] = 0xf1;
       buf8[2] = 0x85;
 
       if(convert(fd1,buf8) < 0)
-      {
-        close(fd1);
-        close(fdlog);
-        exit(-1);
-      }
+        PRG_OK = 0;
 
 //#################
 
@@ -231,11 +257,22 @@ int main()
       // Display for 6.144 V range
       printf("Ch 1: %.3f V - Ch 2: %.3f V - Ch 3: %.3f V - Ch 4: %.3f V - Ch 5: %.3f V - Ch 6: %.3f V - Ch 7: %.3f V - Ch 8: %.3f V -- %s",(float)val1*6.144/32768.0,(float)val2*6.144/32768.0,(float)val3*6.144/32768.0,(float)val4*6.144/32768.0,(float)val5*6.144/32768.0,(float)val6*6.144/32768.0,(float)val7*6.144/32768.0,(float)val8*6.144/32768.0,ctime(&akttime));
       
-      /* pause 1.0 s */
-      usleep(1000000);
+      if(logready)
+      {
+        sprintf(fileinput,"%02d-%02d-%04d %02d:%02d:%02d;%ld;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;\n\0",timeset->tm_mday,timeset->tm_mon+1,timeset->tm_year+1900,timeset->tm_hour,timeset->tm_min,timeset->tm_sec,count,(float)val1*6.144/32768.0,(float)val2*6.144/32768.0,(float)val3*6.144/32768.0,(float)val4*6.144/32768.0,(float)val5*6.144/32768.0,(float)val6*6.144/32768.0,(float)val7*6.144/32768.0,(float)val8*6.144/32768.0);
+        if(DEBUG)
+          printf("Debug: %s\n",fileinput);
+        fprintf(fdlog,"%s",fileinput);
+        count++;
+        fflush(fdlog);
+      }
+      
+      /* pause 10.0 s */
+      //usleep(10000000);
+      sleep(10);
   }
 
   close(fd1);
-  close(fdlog);
+  fclose(fdlog);
   return(1);
 }
