@@ -60,6 +60,7 @@ int main()
   time_t akttime;	   // Zeitstempel
   time_t baktime;
   struct tm *timeset;	   // Zeitstruktur zerlegt in Elemente
+  int oldday;		   // Altertag für Umschaltung
   int update;		   // Update der Daten im Minutentakt
   
   int fd1;                 // Device-Handle i2c
@@ -97,6 +98,7 @@ int main()
     exit(-1);
   }
   logready = 0;
+  oldday = -1;
   update = 0;
   count = 0;
   PRG_OK = 1;
@@ -139,6 +141,7 @@ int main()
           fprintf(fdlog,"%s",filehead);
           fflush(fdlog);
           logready = 1;
+          oldday = timeset->tm_yday;
         }
         else
         {
@@ -148,8 +151,9 @@ int main()
       }
       
       // Tageswechsel
-      if((logready)&(timeset->tm_hour == 0)&(timeset->tm_min == 0)&(timeset->tm_sec == 0))
+      if((logready)&(timeset->tm_yday != oldday))
       {
+        fflush(fdlog);
         fclose(fdlog);
         if((fdlog = fopen(filename,"w")) >= 0)
         {
@@ -157,6 +161,7 @@ int main()
           fprintf(fdlog,"%s",filehead);
           fflush(fdlog);
           logready = 1;
+          oldday = timeset->tm_yday;
         }
         else
         {
