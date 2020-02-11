@@ -1,3 +1,4 @@
+#include <wiringPi.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -9,16 +10,21 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <linux/i2c-dev.h>
+#include <math.h>
 
 #define ADS_ADDR1 0x48
 #define ADS_ADDR2 0x49
 #define ADS_ADDR3 0x4A
 #define ADS_ADDR4 0x4B
+#define ADS_TEMP  0x76
 
 #define	filenamelength 30
 #define filestringlength 200
 #define bufferlength 10
 #define WAITTIME 1
+#define LedRot    0
+#define ALTITUDE 10
+#define MAXBME280DATA	96
 
 #define DEBUG 0
 
@@ -73,7 +79,8 @@ int main()
   char fileinput[filestringlength];	   // Datenstring für Log  
   long count;		   // Anzahl Daten
   int PRG_OK;		   // Programmmlauf OK
-  
+  int ledflash;
+
   uint8_t buf1[bufferlength];        // I/O buffer 1a
   uint8_t buf2[bufferlength];        // I/O buffer 2a
   uint8_t buf3[bufferlength];        // I/O buffer 3a
@@ -100,6 +107,28 @@ int main()
   int16_t val11;            // Result (int) channel 3c
   int16_t val12;            // Result (int) channel 4c
 
+  char data[MAXBME280DATA] = {0};	// RawData
+  int T[3] = {0};			// Temperatur Kalibrirung
+  int P[9] = {0};			// Luftdruck Kalibrirung
+  int H[6] = {0};			// Feuchte Kalibrirung
+  int device;				// devicehandle
+  double temperature;			// final temperature
+  double pressure;			// final pressure
+  double pressure_nn;			// final pressure at sea level
+  double huminity;			// final huminity
+  int i;				// loop counter
+  double temp1, temp2, temp3;		// calculating temperature
+  double press1, press2, press3;	// calculating pressure
+  char reg[1] = {0};			// reg[], config[] for I2C I/O
+  char config[2] = {0};
+  long adc_p;				// Raw-Werte aus dem AD-Wandler
+  long adc_t;
+  long adc_h;
+  int VME280config;			// Kalibrieung
+  wiringPiSetup();
+  pinMode(LedRot, OUTPUT);
+  digitalWrite(ledflash, 0);
+  
   // open device on /dev/i2c-1
   if ((fd1 = open("/dev/i2c-1", O_RDWR)) < 0)
   {
@@ -112,6 +141,7 @@ int main()
   update = 0;
   count = 0;
   PRG_OK = 1;
+  VME280config = 0;
   for(n=0;n<filenamelength;n++)
     filename[n]=0x0;
   for(n=0;n<filestringlength;n++)
@@ -129,6 +159,8 @@ int main()
       {
         baktime = akttime;
         update = 1;
+        ledflash = ! ledflash;
+        digitalWrite(LedRot,ledflash);
       }
       else
         update = 0;
@@ -302,6 +334,129 @@ int main()
 
 //#################
 
+      // connect to second ads1115 as i2c slave 
+      if (ioctl(fd1, I2C_SLAVE, ADS_TEMP) < 0)
+      {
+        printf("Error: Couldn't find device on address!\n");
+        PRG_OK = 0;
+      }
+      
+      if(VME280config)
+      {
+        // Select control measurement register(0xF4)
+        // normal mode, temp and pressure oversampling rate = 1(0x27)
+        config[0] = 0xF4;
+        config[1] = 0x27;
+        write(fd1, config, 2);
+        
+        // select config register(0xF5)
+        // stand_by time = 1000 ms(0xA0)
+        config[0] = 0xF5;
+        config[1] = 0xA0;
+        write(fd1, config, 2);
+        sleep(1);
+        
+        // Read 6 bytes of data from register(0xF7)
+        reg[0] = 0xF7;
+        write(fd1, reg, 1);
+        if(read(fd1, data, 8) != 8)
+        {
+          printf("Unable to read data from i2c bus (1)\n");
+          PRG_OK = 0;
+        }
+        // Convert pressure and temperature data to 19-bits
+        adc_p = (((long)data[0] << 12) + ((long)data[1] << 4) + (long)(data[2] >> 4));
+        adc_t = (((long)data[3] << 12) + ((long)data[4] << 4) + (long)(data[5] >> 4));
+        adc_h = (((long)data[6] << 8) + ((long)data[7]));
+        
+        // Temperatur kompensiert
+        temp1 = (((double)adc_t)/16384.0 - ((double)T[0])/1024.0)*((double)T[1]);
+        temp3 = ((double)adc_t)/131072.0 - ((double)T[0])/8192.0;
+        temp2 = temp3*temp3*((double)T[2]);
+        temperature = (temp1 + temp2)/5120.0;
+        
+        // Luftfdruck kompensiert
+        press1 = ((temp1 + temp2)/2.0) - 64000.0;
+        press2 = press1*press1*((double)P[5])/32768.0;
+        press2 = press2 + press1*((double)P[4])*2.0;
+        press2 = (press2/4.0) + (((double)P[3])*65536.0);
+        press1 = (((double) P[2])*press1*press1/524288.0 + ((double) P[1])*press1)/524288.0;
+        press1 = (1.0 + press1/32768.0)*((double)P[0]);
+        press3 = 1048576.0 - (double)adc_p;
+        if (press1 != 0.0) // avoid error: division by 0
+        {
+          press3 = (press3 - press2/4096.0)*6250.0/press1;
+          press1 = ((double) P[8])*press3*press3/2147483648.0;
+          press2 = press3 * ((double) P[7])/32768.0;
+          pressure = (press3 + (press1 + press2 + ((double)P[6]))/16.0)/100;
+        }
+        else
+        {
+          pressure = 0.0;
+        }
+        
+        pressure_nn = pressure/pow(1 - ALTITUDE/44330.0, 5.255);
+        
+        // Feuchte
+        
+        
+        // Output data to screen
+        printf("Debug:\n");
+        printf("Temperatur       : %.2f °C \n", temperature);
+        printf("Luftfeuchte      : %.2f %Hr \n", huminity);
+        printf("Luftdruck        : %.2f hPa \n", pressure);
+        printf("Luftdruck über NN: %.2f hPa \n", pressure_nn);
+      }
+      else
+      {
+        reg[0] = 0x88;
+        write(fd1, reg, 1);
+        if(read(fd1, data, MAXBME280DATA) != MAXBME280DATA)
+        {
+          printf("Unable to read data from i2c bus(2)\n");
+          PRG_OK = 0;
+        }
+        // Temperatur
+        T[0] = data[1] * 256 + data[0];
+        T[1] = data[3] * 256 + data[2];
+        if(T[1] > 32767)
+        { 
+          T[1] -= 65536;
+        }
+        T[2] = data[5] * 256 + data[4];
+        if(T[2] > 32767)
+        {
+          T[2] -= 65536;
+        }
+        
+        // Luftdruck
+        P[0] = data[7] * 256 + data[6];
+        for (i = 0; i < 8; i++)
+        {
+          P[i+1] = data[2*i+9]*256 + data[2*i+8];
+          if(P[i+1] > 32767)
+          { 
+            P[i+1] -= 65536;
+          }
+        }
+        
+        // Feuchte
+        H[0] = data[25];
+        H[1] = data[90] * 256 + data[89];
+        if(H[1] > 32767)
+        { 
+          H[1] -= 65536;
+        }
+        H[2] = data[91];
+        H[3] = data[92] * 16 + (data[93] & 0x0F);
+        H[4] = data[94] * 16 + ((data[93] & 0xF0)/16);
+        H[5] = data[95];
+        
+        VME280config = 1;
+      }
+
+//#################
+
       /* convert buffer to int value */
       val1 = (int16_t)buf1[0]*256 + (uint16_t)buf1[1];
       val2 = (int16_t)buf2[0]*256 + (uint16_t)buf2[1];
@@ -320,7 +475,7 @@ int main()
       // Display for 4.096 V range
       //    printf("Ch 1: %.2f V - Ch 2: %.2f V - Ch 3: %.2f V - Ch 4: %.2f V - Ch 5: %.2f V - Ch 6: %.2f V - Ch 7: %.2f V - Ch 8: %.2f V -- %s",(float)val1*4.096/32768.0,(float)val2*4.096/32768.0,(float)val3*4.096/32768.0,(float)val4*4.096/32768.0,(float)val5*4.096/32768.0,(float)val6*4.096/32768.0,(float)val7*4.096/32768.0,(float)val8*4.096/32768.0,ctime(&akttime));
       // Display for 6.144 V range
-      printf("Ch 1: %.3f V - Ch 2: %.3f V - Ch 3: %.3f V - Ch 4: %.3f V - Ch 5: %.3f V - Ch 6: %.3f V - Ch 7: %.3f V - Ch 8: %.3f V - Ch 9: %.3f V - Ch 10: %.3f V - Ch 11: %.3f V - Ch 12: %.3f V -- %s",(float)val1*6.144/32768.0,(float)val2*6.144/32768.0,(float)val3*6.144/32768.0,(float)val4*6.144/32768.0,(float)val5*6.144/32768.0,(float)val6*6.144/32768.0,(float)val7*6.144/32768.0,(float)val8*6.144/32768.0,(float)val9*6.144/32768.0,(float)val10*6.144/32768.0,(float)val11*6.144/32768.0,(float)val12*6.144/32768.0,ctime(&akttime));
+      printf("Ch 1: %.3f V - Ch 2: %.3f V - Ch 3: %.3f V - Ch 4: %.3f V -\nCh 5: %.3f V - Ch 6: %.3f V - Ch 7: %.3f V - Ch 8: %.3f V -\nCh 9: %.3f V - Ch 10: %.3f V - Ch 11: %.3f V - Ch 12: %.3f V -\n %s",(float)val1*6.144/32768.0,(float)val2*6.144/32768.0,(float)val3*6.144/32768.0,(float)val4*6.144/32768.0,(float)val5*6.144/32768.0,(float)val6*6.144/32768.0,(float)val7*6.144/32768.0,(float)val8*6.144/32768.0,(float)val9*6.144/32768.0,(float)val10*6.144/32768.0,(float)val11*6.144/32768.0,(float)val12*6.144/32768.0,ctime(&akttime));
       
       if(logready)
       {
