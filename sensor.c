@@ -212,6 +212,19 @@ int main()
         }
       }
     
+      val1 = 0.0;
+      val2 = 0.0;
+      val3 = 0.0;
+      val4 = 0.0;
+      val5 = 0.0;
+      val6 = 0.0;
+      val7 = 0.0;
+      val8 = 0.0;
+      val9 = 0.0;
+      val10 = 0.0;
+      val11 = 0.0;
+      val12 = 0.0;
+
       if(DEBUG)
         printf("Sensor1\n");
 
@@ -341,6 +354,11 @@ int main()
         PRG_OK = 0;
       }
       
+      temperature  = 0.0;
+      huminity     = 0.0;
+      pressure     = 0.0;
+      pressure_nn  = 0.0;
+
       if(VME280config)
       {
         // Select control measurement register(0xF4)
@@ -401,9 +419,8 @@ int main()
         
         
         // Output data to screen
-        printf("Debug:\n");
         printf("Temperatur       : %.2f °C \n", temperature);
-        printf("Luftfeuchte      : %.2f %Hr \n", huminity);
+        printf("Luftfeuchte      : %.2f %rel. \n", huminity);
         printf("Luftdruck        : %.2f hPa \n", pressure);
         printf("Luftdruck über NN: %.2f hPa \n", pressure_nn);
       }
