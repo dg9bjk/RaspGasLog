@@ -12,12 +12,13 @@
 
 #define ADS_ADDR1 0x48
 #define ADS_ADDR2 0x49
-#define ADS_ADDR3 0x50
-#define ADS_ADDR4 0x51
+#define ADS_ADDR3 0x4A
+#define ADS_ADDR4 0x4B
 
 #define	filenamelength 30
 #define filestringlength 200
 #define bufferlength 10
+#define WAITTIME 1
 
 #define DEBUG 0
 
@@ -81,6 +82,11 @@ int main()
   uint8_t buf6[bufferlength];        // I/O buffer 2b
   uint8_t buf7[bufferlength];        // I/O buffer 3b
   uint8_t buf8[bufferlength];        // I/O buffer 4b
+  uint8_t buf9[bufferlength];        // I/O buffer 1c
+  uint8_t buf10[bufferlength];        // I/O buffer 2c
+  uint8_t buf11[bufferlength];        // I/O buffer 3c
+  uint8_t buf12[bufferlength];        // I/O buffer 4c
+
   int16_t val1;            // Result (int) channel 1a
   int16_t val2;            // Result (int) channel 2a
   int16_t val3;            // Result (int) channel 3a
@@ -89,6 +95,10 @@ int main()
   int16_t val6;            // Result (int) channel 2b
   int16_t val7;            // Result (int) channel 3b
   int16_t val8;            // Result (int) channel 4b
+  int16_t val9;            // Result (int) channel 1c
+  int16_t val10;            // Result (int) channel 2c
+  int16_t val11;            // Result (int) channel 3c
+  int16_t val12;            // Result (int) channel 4c
 
   // open device on /dev/i2c-1
   if ((fd1 = open("/dev/i2c-1", O_RDWR)) < 0)
@@ -109,7 +119,7 @@ int main()
   for(n=0;n<filestringlength;n++)
     filehead[n]=0x0;
 
-  sprintf(filehead,"Zeit;Anzahl;Ch.1;Ch.2;Ch.3;Ch.4;Ch.5;Ch.6;Ch.7;Ch.8;\n\0");
+  sprintf(filehead,"Zeit;Anzahl;Ch.1;Ch.2;Ch.3;Ch.4;Ch.5;Ch.6;Ch.7;Ch.8;Ch.9;Ch.10;Ch.11;Ch.12;\n\0");
 
   printf("Hauptprogramm\n");  
 
@@ -170,13 +180,16 @@ int main()
         }
       }
     
+      if(DEBUG)
+        printf("Sensor1\n");
+
       // connect to first ads1115 as i2c slave
       if (ioctl(fd1, I2C_SLAVE, ADS_ADDR1) < 0)
       {
         printf("Error: Couldn't find device on address!\n");
         PRG_OK = 0;
       }
-    
+      
       // set config register (reg. 1) and start conversion
       // AIN0 and GND, 4.096 V, 128 samples/s
       buf1[0] = 1;
@@ -207,13 +220,16 @@ int main()
       if(convert(fd1,buf4) < 0)
         PRG_OK = 0;
       
+      if(DEBUG)
+        printf("Sensor2\n");
+
       // connect to second ads1115 as i2c slave 
       if (ioctl(fd1, I2C_SLAVE, ADS_ADDR2) < 0)
       {
         printf("Error: Couldn't find device on address!\n");
         PRG_OK = 0;
       }
-        
+
       // set config register (reg. 1) and start conversion
       // AIN0 and GND, 4.096 V, 128 samples/s
       buf5[0] = 1;
@@ -244,6 +260,46 @@ int main()
       if(convert(fd1,buf8) < 0)
         PRG_OK = 0;
 
+      if(DEBUG)
+        printf("Sensor3\n");
+
+      // connect to second ads1115 as i2c slave 
+      if (ioctl(fd1, I2C_SLAVE, ADS_ADDR4) < 0)
+      {
+        printf("Error: Couldn't find device on address!\n");
+        PRG_OK = 0;
+      }
+        
+      // set config register (reg. 1) and start conversion
+      // AIN0 and GND, 4.096 V, 128 samples/s
+      buf9[0] = 1;
+      buf9[1] = 0xc1;
+      buf9[2] = 0x85;
+      
+      if(convert(fd1,buf9) < 0)
+        PRG_OK = 0;
+      
+      buf10[0] = 1;
+      buf10[1] = 0xd1;
+      buf10[2] = 0x85;
+      
+      if(convert(fd1,buf10) < 0)
+        PRG_OK = 0;
+
+      buf11[0] = 1;
+      buf11[1] = 0xe1;
+      buf11[2] = 0x85;
+
+      if(convert(fd1,buf11) < 0)
+        PRG_OK = 0;
+
+      buf12[0] = 1;
+      buf12[1] = 0xf1;
+      buf12[2] = 0x85;
+
+      if(convert(fd1,buf12) < 0)
+        PRG_OK = 0;
+
 //#################
 
       /* convert buffer to int value */
@@ -255,16 +311,20 @@ int main()
       val6 = (int16_t)buf6[0]*256 + (uint16_t)buf6[1];
       val7 = (int16_t)buf7[0]*256 + (uint16_t)buf7[1];
       val8 = (int16_t)buf8[0]*256 + (uint16_t)buf8[1];
+      val9 = (int16_t)buf9[0]*256 + (uint16_t)buf9[1];
+      val10 = (int16_t)buf10[0]*256 + (uint16_t)buf10[1];
+      val11 = (int16_t)buf11[0]*256 + (uint16_t)buf11[1];
+      val12 = (int16_t)buf12[0]*256 + (uint16_t)buf12[1];
 
       /* display results */
       // Display for 4.096 V range
       //    printf("Ch 1: %.2f V - Ch 2: %.2f V - Ch 3: %.2f V - Ch 4: %.2f V - Ch 5: %.2f V - Ch 6: %.2f V - Ch 7: %.2f V - Ch 8: %.2f V -- %s",(float)val1*4.096/32768.0,(float)val2*4.096/32768.0,(float)val3*4.096/32768.0,(float)val4*4.096/32768.0,(float)val5*4.096/32768.0,(float)val6*4.096/32768.0,(float)val7*4.096/32768.0,(float)val8*4.096/32768.0,ctime(&akttime));
       // Display for 6.144 V range
-      printf("Ch 1: %.3f V - Ch 2: %.3f V - Ch 3: %.3f V - Ch 4: %.3f V - Ch 5: %.3f V - Ch 6: %.3f V - Ch 7: %.3f V - Ch 8: %.3f V -- %s",(float)val1*6.144/32768.0,(float)val2*6.144/32768.0,(float)val3*6.144/32768.0,(float)val4*6.144/32768.0,(float)val5*6.144/32768.0,(float)val6*6.144/32768.0,(float)val7*6.144/32768.0,(float)val8*6.144/32768.0,ctime(&akttime));
+      printf("Ch 1: %.3f V - Ch 2: %.3f V - Ch 3: %.3f V - Ch 4: %.3f V - Ch 5: %.3f V - Ch 6: %.3f V - Ch 7: %.3f V - Ch 8: %.3f V - Ch 9: %.3f V - Ch 10: %.3f V - Ch 11: %.3f V - Ch 12: %.3f V -- %s",(float)val1*6.144/32768.0,(float)val2*6.144/32768.0,(float)val3*6.144/32768.0,(float)val4*6.144/32768.0,(float)val5*6.144/32768.0,(float)val6*6.144/32768.0,(float)val7*6.144/32768.0,(float)val8*6.144/32768.0,(float)val9*6.144/32768.0,(float)val10*6.144/32768.0,(float)val11*6.144/32768.0,(float)val12*6.144/32768.0,ctime(&akttime));
       
       if(logready)
       {
-        sprintf(fileinput,"%02d-%02d-%04d %02d:%02d:%02d;%ld;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;\n\0",timeset->tm_mday,timeset->tm_mon+1,timeset->tm_year+1900,timeset->tm_hour,timeset->tm_min,timeset->tm_sec,count,(float)val1*6.144/32768.0,(float)val2*6.144/32768.0,(float)val3*6.144/32768.0,(float)val4*6.144/32768.0,(float)val5*6.144/32768.0,(float)val6*6.144/32768.0,(float)val7*6.144/32768.0,(float)val8*6.144/32768.0);
+        sprintf(fileinput,"%02d-%02d-%04d %02d:%02d:%02d;%ld;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;\n\0",timeset->tm_mday,timeset->tm_mon+1,timeset->tm_year+1900,timeset->tm_hour,timeset->tm_min,timeset->tm_sec,count,(float)val1*6.144/32768.0,(float)val2*6.144/32768.0,(float)val3*6.144/32768.0,(float)val4*6.144/32768.0,(float)val5*6.144/32768.0,(float)val6*6.144/32768.0,(float)val7*6.144/32768.0,(float)val8*6.144/32768.0,(float)val9*6.144/32768.0,(float)val10*6.144/32768.0,(float)val11*6.144/32768.0,(float)val12*6.144/32768.0);
         if(DEBUG)
           printf("Debug: %s\n",fileinput);
         fprintf(fdlog,"%s",fileinput);
@@ -274,7 +334,7 @@ int main()
       
       /* pause 10.0 s */
       //usleep(10000000);
-      sleep(10);
+      sleep(1);
   }
 
   close(fd1);
