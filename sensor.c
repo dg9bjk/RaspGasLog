@@ -18,8 +18,10 @@
 #define ADS_ADDR4 0x4B
 #define ADS_TEMP  0x76
 
+#define VERSION "1.0.0"
+
 #define	filenamelength 30
-#define filestringlength 200
+#define filestringlength 250
 #define bufferlength 10
 #define WAITTIME 1
 #define LedRot    0
@@ -125,6 +127,10 @@ int main()
   long adc_t;
   long adc_h;
   int VME280config;			// Kalibrieung
+  float temp_prt;			// Zwischenwerte zum Drucken
+  float hum_prt;
+  float pres_prt;
+
   wiringPiSetup();
   pinMode(LedRot, OUTPUT);
   digitalWrite(ledflash, 0);
@@ -149,9 +155,9 @@ int main()
   for(n=0;n<filestringlength;n++)
     filehead[n]=0x0;
 
-  sprintf(filehead,"Zeit;Anzahl;MQ-2 [V];MQ-3 [V];MQ-4 [V];Referenz [V];MQ-5 [V];MQ-6 [V];MQ-7 [V];Referenz [V];MQ-8 [V];MQ-9 [V];MQ-135 [V];Referenz [V];Temperatur [°C];rel.Feuchte [%rH];Luftdruck [hPa]\n\0");
+  sprintf(filehead,"Zeit;Anzahl;MQ-2 [V];MQ-3 [V];MQ-4 [V];Referenz [V];MQ-5 [V];MQ-6 [V];MQ-7 [V];Referenz [V];MQ-8 [V];MQ-9 [V];MQ-135 [V];Referenz [V];Temperatur [°C];rel.Feuchte [%rH];Luftdruck [hPa];\n\0");
 
-  printf("Hauptprogramm\n");  
+  printf("Hauptprogramm "VERSION"\n");  
 
   while(PRG_OK) // loop forever
   {
@@ -480,6 +486,17 @@ int main()
           printf("Luftdruck        : %.2f hPa \n", pressure);
         }
 
+        // Recodierung wegen Ausgabe
+        temp_prt = (float)(temperature);
+        hum_prt  = (float)(huminity);
+        pres_prt = (float)(pressure);
+        if(DEBUG)
+        {
+          printf("Debug: temp_prt: %.2f\n",temp_prt);
+          printf("Debug: hum_prt : %.2f\n",hum_prt);
+          printf("Debug: pres_prt: %.2f\n",pres_prt);
+        }
+
 //#################
 
       /* convert buffer to int value */
@@ -504,7 +521,11 @@ int main()
       
       if(logready)
       {
-        sprintf(fileinput,"%02d-%02d-%04d %02d:%02d:%02d;%ld;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.2f;%.2f;%.2f;\n\0",timeset->tm_mday,timeset->tm_mon+1,timeset->tm_year+1900,timeset->tm_hour,timeset->tm_min,timeset->tm_sec,count,(float)val1*6.144/32768.0,(float)val2*6.144/32768.0,(float)val3*6.144/32768.0,(float)val4*6.144/32768.0,(float)val5*6.144/32768.0,(float)val6*6.144/32768.0,(float)val7*6.144/32768.0,(float)val8*6.144/32768.0,(float)val9*6.144/32768.0,(float)val10*6.144/32768.0,(float)val11*6.144/32768.0,(float)val12*6.144/32768.0),temperature,huminity,pressure;
+        sprintf(fileinput,"%02d-%02d-%04d %02d:%02d:%02d;%ld;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.2f;%.2f;%.2f;\n\0",
+        timeset->tm_mday,timeset->tm_mon+1,timeset->tm_year+1900,timeset->tm_hour,timeset->tm_min,timeset->tm_sec,count,
+        (float)val1*6.144/32768.0,(float)val2*6.144/32768.0,(float)val3*6.144/32768.0,(float)val4*6.144/32768.0,
+        (float)val5*6.144/32768.0,(float)val6*6.144/32768.0,(float)val7*6.144/32768.0,(float)val8*6.144/32768.0,
+        (float)val9*6.144/32768.0,(float)val10*6.144/32768.0,(float)val11*6.144/32768.0,(float)val12*6.144/32768.0,temp_prt,hum_prt,pres_prt);
         if(DEBUG)
           printf("Debug: %s\n",fileinput);
         fprintf(fdlog,"%s",fileinput);
@@ -514,7 +535,7 @@ int main()
       
       /* pause 10.0 s */
       //usleep(10000000);
-      sleep(1);
+      sleep(10);
   }
 
   close(fd1);
