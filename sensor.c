@@ -114,11 +114,11 @@ int main()
   int device;				// devicehandle
   double temperature;			// final temperature
   double pressure;			// final pressure
-  double pressure_nn;			// final pressure at sea level
   double huminity;			// final huminity
   int i;				// loop counter
   double temp1, temp2, temp3;		// calculating temperature
   double press1, press2, press3;	// calculating pressure
+  double hum1;                   // Feuchte
   char reg[1] = {0};			// reg[], config[] for I2C I/O
   char config[2] = {0};
   long adc_p;				// Raw-Werte aus dem AD-Wandler
@@ -149,7 +149,7 @@ int main()
   for(n=0;n<filestringlength;n++)
     filehead[n]=0x0;
 
-  sprintf(filehead,"Zeit;Anzahl;Ch.1;Ch.2;Ch.3;Ch.4;Ch.5;Ch.6;Ch.7;Ch.8;Ch.9;Ch.10;Ch.11;Ch.12;\n\0");
+  sprintf(filehead,"Zeit;Anzahl;MQ-2 [V];MQ-3 [V];MQ-4 [V];Referenz [V];MQ-5 [V];MQ-6 [V];MQ-7 [V];Referenz [V];MQ-8 [V];MQ-9 [V];MQ-135 [V];Referenz [V];Temperatur [°C];rel.Feuchte [%rH];Luftdruck [hPa]\n\0");
 
   printf("Hauptprogramm\n");  
 
@@ -357,10 +357,55 @@ int main()
       temperature  = 0.0;
       huminity     = 0.0;
       pressure     = 0.0;
-      pressure_nn  = 0.0;
 
-      if(VME280config)
+      if(! VME280config)
       {
+        reg[0] = 0x88;
+        write(fd1, reg, 1);
+        if(read(fd1, data, MAXBME280DATA) != MAXBME280DATA)
+        {
+          printf("Unable to read data from i2c bus(2)\n");
+          PRG_OK = 0;
+        }
+        // Temperatur
+        T[0] = data[1] * 256 + data[0];
+        T[1] = data[3] * 256 + data[2];
+        if(T[1] > 32767)
+        { 
+          T[1] -= 65536;
+        }
+        T[2] = data[5] * 256 + data[4];
+        if(T[2] > 32767)
+        {
+          T[2] -= 65536;
+        }
+        
+        // Luftdruck
+        P[0] = data[7] * 256 + data[6];
+        for (i = 0; i < 8; i++)
+        {
+          P[i+1] = data[2*i+9]*256 + data[2*i+8];
+          if(P[i+1] > 32767)
+          { 
+            P[i+1] -= 65536;
+          }
+        }
+        
+        // Feuchte
+        H[0] = data[25];
+        H[1] = data[90] * 256 + data[89];
+        if(H[1] > 32767)
+        { 
+          H[1] -= 65536;
+        }
+        H[2] = data[91];
+        H[3] = data[92] * 16 + (data[93] & 0x0F);
+        H[4] = data[94] * 16 + ((data[93] & 0xF0)/16);
+        H[5] = data[95];
+        
+        VME280config = 1;
+      }
+
         // Select control measurement register(0xF4)
         // normal mode, temp and pressure oversampling rate = 1(0x27)
         config[0] = 0xF4;
@@ -413,64 +458,27 @@ int main()
           pressure = 0.0;
         }
         
-        pressure_nn = pressure/pow(1 - ALTITUDE/44330.0, 5.255);
-        
         // Feuchte
+        hum1 = ((temp1 + temp2) - 76800.0);
+        hum1 = (adc_h -(((double)H[3]) * 64.0 + ((double)H[4]) / 16384.0 * hum1)) *
+                (((double)H[1]) / 65535.0 * (1.0 + ((double)H[5]) / 67108864.0 * hum1 *
+                (1.0 + ((double)H[2]) / 67108864.0 * hum1)));
+        hum1 = hum1 * (1.0 - ((double)H[0]) * hum1 / 524288.0);
+
+        if(hum1 > 100.0)
+          hum1 = 100.0;
+        else if(hum1 < 0.0)
+          hum1 = 0.0;
         
-        
+        huminity = hum1;        
+
         // Output data to screen
-        printf("Temperatur       : %.2f °C \n", temperature);
-        printf("Luftfeuchte      : %.2f %rel. \n", huminity);
-        printf("Luftdruck        : %.2f hPa \n", pressure);
-        printf("Luftdruck über NN: %.2f hPa \n", pressure_nn);
-      }
-      else
-      {
-        reg[0] = 0x88;
-        write(fd1, reg, 1);
-        if(read(fd1, data, MAXBME280DATA) != MAXBME280DATA)
+        if(DEBUG)
         {
-          printf("Unable to read data from i2c bus(2)\n");
-          PRG_OK = 0;
+          printf("Temperatur       : %.2f °C \n", temperature);
+          printf("Luftfeuchte      : %.2f %rH \n", huminity);
+          printf("Luftdruck        : %.2f hPa \n", pressure);
         }
-        // Temperatur
-        T[0] = data[1] * 256 + data[0];
-        T[1] = data[3] * 256 + data[2];
-        if(T[1] > 32767)
-        { 
-          T[1] -= 65536;
-        }
-        T[2] = data[5] * 256 + data[4];
-        if(T[2] > 32767)
-        {
-          T[2] -= 65536;
-        }
-        
-        // Luftdruck
-        P[0] = data[7] * 256 + data[6];
-        for (i = 0; i < 8; i++)
-        {
-          P[i+1] = data[2*i+9]*256 + data[2*i+8];
-          if(P[i+1] > 32767)
-          { 
-            P[i+1] -= 65536;
-          }
-        }
-        
-        // Feuchte
-        H[0] = data[25];
-        H[1] = data[90] * 256 + data[89];
-        if(H[1] > 32767)
-        { 
-          H[1] -= 65536;
-        }
-        H[2] = data[91];
-        H[3] = data[92] * 16 + (data[93] & 0x0F);
-        H[4] = data[94] * 16 + ((data[93] & 0xF0)/16);
-        H[5] = data[95];
-        
-        VME280config = 1;
-      }
 
 //#################
 
@@ -492,11 +500,11 @@ int main()
       // Display for 4.096 V range
       //    printf("Ch 1: %.2f V - Ch 2: %.2f V - Ch 3: %.2f V - Ch 4: %.2f V - Ch 5: %.2f V - Ch 6: %.2f V - Ch 7: %.2f V - Ch 8: %.2f V -- %s",(float)val1*4.096/32768.0,(float)val2*4.096/32768.0,(float)val3*4.096/32768.0,(float)val4*4.096/32768.0,(float)val5*4.096/32768.0,(float)val6*4.096/32768.0,(float)val7*4.096/32768.0,(float)val8*4.096/32768.0,ctime(&akttime));
       // Display for 6.144 V range
-      printf("Ch 1: %.3f V - Ch 2: %.3f V - Ch 3: %.3f V - Ch 4: %.3f V -\nCh 5: %.3f V - Ch 6: %.3f V - Ch 7: %.3f V - Ch 8: %.3f V -\nCh 9: %.3f V - Ch 10: %.3f V - Ch 11: %.3f V - Ch 12: %.3f V -\n %s",(float)val1*6.144/32768.0,(float)val2*6.144/32768.0,(float)val3*6.144/32768.0,(float)val4*6.144/32768.0,(float)val5*6.144/32768.0,(float)val6*6.144/32768.0,(float)val7*6.144/32768.0,(float)val8*6.144/32768.0,(float)val9*6.144/32768.0,(float)val10*6.144/32768.0,(float)val11*6.144/32768.0,(float)val12*6.144/32768.0,ctime(&akttime));
+      printf("MQ-2: %.3f V - MQ-3: %.3f V - MQ-4: %.3f V - Referenz: %.3f V\nMQ-5: %.3f V - MQ-6: %.3f V - MQ-7: %.3f V - Referenz: %.3f V\nMQ-8: %.3f V - MQ-9: %.3f V - MQ-135: %.3f V - Referenz: %.3f V\nTemperatur: %.2f °C - rel. Feuchte %.2f %rH - Luftdruck %.2f hPa - %s",(float)val1*6.144/32768.0,(float)val2*6.144/32768.0,(float)val3*6.144/32768.0,(float)val4*6.144/32768.0,(float)val5*6.144/32768.0,(float)val6*6.144/32768.0,(float)val7*6.144/32768.0,(float)val8*6.144/32768.0,(float)val9*6.144/32768.0,(float)val10*6.144/32768.0,(float)val11*6.144/32768.0,(float)val12*6.144/32768.0,temperature,huminity,pressure,ctime(&akttime));
       
       if(logready)
       {
-        sprintf(fileinput,"%02d-%02d-%04d %02d:%02d:%02d;%ld;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;\n\0",timeset->tm_mday,timeset->tm_mon+1,timeset->tm_year+1900,timeset->tm_hour,timeset->tm_min,timeset->tm_sec,count,(float)val1*6.144/32768.0,(float)val2*6.144/32768.0,(float)val3*6.144/32768.0,(float)val4*6.144/32768.0,(float)val5*6.144/32768.0,(float)val6*6.144/32768.0,(float)val7*6.144/32768.0,(float)val8*6.144/32768.0,(float)val9*6.144/32768.0,(float)val10*6.144/32768.0,(float)val11*6.144/32768.0,(float)val12*6.144/32768.0);
+        sprintf(fileinput,"%02d-%02d-%04d %02d:%02d:%02d;%ld;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.3f;%.2f;%.2f;%.2f;\n\0",timeset->tm_mday,timeset->tm_mon+1,timeset->tm_year+1900,timeset->tm_hour,timeset->tm_min,timeset->tm_sec,count,(float)val1*6.144/32768.0,(float)val2*6.144/32768.0,(float)val3*6.144/32768.0,(float)val4*6.144/32768.0,(float)val5*6.144/32768.0,(float)val6*6.144/32768.0,(float)val7*6.144/32768.0,(float)val8*6.144/32768.0,(float)val9*6.144/32768.0,(float)val10*6.144/32768.0,(float)val11*6.144/32768.0,(float)val12*6.144/32768.0),temperature,huminity,pressure;
         if(DEBUG)
           printf("Debug: %s\n",fileinput);
         fprintf(fdlog,"%s",fileinput);

@@ -1,2 +1,2 @@
-gcc sensor.c -lwiringPi
+gcc sensor.c -lwiringPi -lm
 mv a.out sensorlog
