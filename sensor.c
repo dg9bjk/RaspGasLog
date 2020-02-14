@@ -203,6 +203,8 @@ int main()
       {
         fflush(fdlog);
         fclose(fdlog);
+        count = 0;
+
         if((fdlog = fopen(filename,"w")) >= 0)
         {
           printf("Datei %s geöffnet(2)\n",filename);
