@@ -2,6 +2,7 @@
 *.c~
 make~
 a.out
+test.txt
 sensorlog
 *.csv
 *.csv~
