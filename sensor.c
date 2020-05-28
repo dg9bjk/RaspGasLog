@@ -26,7 +26,8 @@
 #define WAITTIME 1
 #define LedRot    0
 #define ALTITUDE 10
-#define MAXBME280DATA	96
+#define MAXBME280DATA1	26
+#define MAXBME280DATA2	7
 
 #define DEBUG 0
 
@@ -109,7 +110,7 @@ int main()
   int16_t val11;            // Result (int) channel 3c
   int16_t val12;            // Result (int) channel 4c
 
-  char data[MAXBME280DATA] = {0};	// RawData
+  char data[MAXBME280DATA1] = {0};	// RawData
   int T[3] = {0};			// Temperatur Kalibrirung
   int P[9] = {0};			// Luftdruck Kalibrirung
   int H[6] = {0};			// Feuchte Kalibrirung
@@ -187,7 +188,7 @@ int main()
         {
           printf("Datei %s geöffnet(1)\n",filename);
           fprintf(fdlog,"%s",filehead);
-          fflush(fdlog);
+//          fflush(fdlog);
           logready = 1;
           oldday = timeset->tm_yday;
         }
@@ -209,7 +210,7 @@ int main()
         {
           printf("Datei %s geöffnet(2)\n",filename);
           fprintf(fdlog,"%s",filehead);
-          fflush(fdlog);
+//          fflush(fdlog);
           logready = 1;
           oldday = timeset->tm_yday;
         }
@@ -370,7 +371,7 @@ int main()
       {
         reg[0] = 0x88;
         write(fd1, reg, 1);
-        if(read(fd1, data, MAXBME280DATA) != MAXBME280DATA)
+        if(read(fd1, data, MAXBME280DATA1) != MAXBME280DATA1)
         {
           printf("Unable to read data from i2c bus(2)\n");
           PRG_OK = 0;
@@ -401,15 +402,24 @@ int main()
         
         // Feuchte
         H[0] = data[25];
-        H[1] = data[90] * 256 + data[89];
+        
+        reg[0] = 0xE1;
+        write(fd1, reg, 1);
+        if(read(fd1, data, MAXBME280DATA2) != MAXBME280DATA2)
+        {
+          printf("Unable to read data from i2c bus(2)\n");
+          PRG_OK = 0;
+        }
+        
+        H[1] = data[1] * 256 + data[0];
         if(H[1] > 32767)
         { 
           H[1] -= 65536;
         }
-        H[2] = data[91];
-        H[3] = data[92] * 16 + (data[93] & 0x0F);
-        H[4] = data[94] * 16 + ((data[93] & 0xF0)/16);
-        H[5] = data[95];
+        H[2] = data[2];
+        H[3] = data[3] * 16 + (data[4] & 0x0F);
+        H[4] = data[5] * 16 + ((data[4] & 0xF0)/16);
+        H[5] = data[6];
         
         VME280config = 1;
       }
@@ -532,7 +542,7 @@ int main()
           printf("Debug: %s\n",fileinput);
         fprintf(fdlog,"%s",fileinput);
         count++;
-        fflush(fdlog);
+//        fflush(fdlog);
       }
       
       /* pause 10.0 s */
@@ -541,6 +551,7 @@ int main()
   }
 
   close(fd1);
+  fflush(fdlog);
   fclose(fdlog);
   return(1);
 }
